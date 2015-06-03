@@ -102,6 +102,7 @@ class ApplicationMain {
 			file: "Tone",
 			fps: Std.int (60),
 			fullscreen: false,
+			hardware: true,
 			height: Std.int (480),
 			orientation: "",
 			packageName: "tone.Tone",

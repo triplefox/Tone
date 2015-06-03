@@ -8,15 +8,20 @@ class WavetableModule {
 	public var tone : Tone;
 	public var module_id : Int;
 	
-	public static var resamplertab : Vector<Float>;
+	public static var rst : Int;
 	
 	public function new(t : Tone) {
 		this.tone = t;
 		this.module_id = tone.assignModuleId(this);
-		if (resamplertab == null) {
-			resamplertab = new Vector<Float>(2048);
-			for (i0 in 0...2048) {
-				resamplertab[i0] = blackmanharris(i0/2047);
+		
+		// TODO: go move this into a LUTResampler module.
+		{
+			rst = tone.spawnFloats(1024);
+			var rb = tone.floatsRawBuf(); 
+			var first = tone.getFloatsBuffer(tone.buffers.a[rst]).first;
+			for (i0 in 0...1024) {
+				//rb[first + i0] = blackmanharris(0.5 - (i0/1023 / 2));
+				rb[first + i0] = lanczos((i0/1023), 3.);
 			}
 		}
 	}
@@ -67,31 +72,11 @@ class WavetableModule {
 		return tone.getFloatsBuffer(buffers.a[m0.buf_ref[0]]);
 	}
 	
-	// z * a: 0, -1, -2, 
-	
-	// z = 0		a = 1		r = 1
-	// z = -0.5		a = 1		r = 0.5
-	// z = -1		a = 1		r = 0
-	// z = 0.5		a = 1		r = 0.5
-	// z = 1		a = 1		r = 0
-	
-	// z = 0		a = 2		r = 1
-	// z = -0.5		a = 2		r = 0.75
-	// z = -1		a = 2		r = 0.5
-	// z = 0.5		a = 2		r = 0.75
-	// z = 1		a = 2		r = 0.5
-
-	// z = 0		a = 0.5		r = 1
-	// z = -0.5		a = 0.5		r = 0
-	// z = -1		a = 0.5		r = 0
-	// z = 0.5		a = 0.5		r = 0
-	// z = 1		a = 0.5		r = 0
-	
-	/* triangle resampler. z is offset. a is 1/width. */
-	public inline function triangle(z : Float, a : Float) {
-		return Math.max(0., 1 - Math.abs(z * a));
+	/* triangle resampler. z is offset, centered between 0.0, 2.0 */
+	public inline function triangle(z : Float) {
+		return Math.max(0., 1 - Math.abs(z));
 	}
-	/* blackman-harris window */
+	/* blackman-harris window, centered between 0.0, 1.0 */
 	public inline function blackmanharris(z : Float) {
 		var y = 2 * Math.PI * z;
 		return 0.35875 
@@ -99,10 +84,18 @@ class WavetableModule {
 			+ 0.14128 * Math.cos(y * 2)
 			- 0.01168 * Math.cos(y * 3);
 	}
+	public inline function sinc(z : Float) {
+		if (z == 0) return 1.; else return Math.sin(z*Math.PI) / (z*Math.PI);
+	}
+	/* lanczos window, centered between -a, a */
+	public inline function lanczos(z : Float, a : Float) {
+		if (z > -a && z < a) return (sinc(z) * sinc(z/a));
+		else return 0.;
+	}
 	
-	/* LUT resampler. z is offset. a is 1/width. */
-	public inline function lut(z : Float, a : Float) {
-		return resamplertab[Std.int(Math.max(0., 1 - Math.abs(z * a))*(resamplertab.length-1))];
+	/* LUT resampler. z is offset 0-1. */
+	public inline function lut(z : Float, d : Vector<Float>, first : Int, len : Int) {
+		return d[first + Std.int(Math.min(len, Math.abs(z * 2) * len))];
 	}
 	
 	public function write(mi : Int) {
@@ -121,21 +114,60 @@ class WavetableModule {
 		// TODO: Higher quality resampling methods. Linear + octave mipmap?
 		// with mipmap i feasibly have levels for 128(2p), 64(4p), 32(8p), 16(16p).
 		// however the bigger quality difference is with the >256 wavelengths.
-		// for those it'd be nice to switch to a triangular resampler that gets progressively
-		// narrower.
 		
 		var alpha = 1./deltaz;
+		var rstd = tone.floatsDeref(rst);
+		var lutf = rstd.first;
+		var lutlen = rstd.length();
+		
+		// The 16-tap works relatively well - after compensating for the alpha value,
+		// it only breaks up when the taps fail to reach the impulses at the low end.
+		// it costs about 3% CPU over the linear version.
+		// when I use the triangle function I get a grainier sound, but less whirlwind artifacts.
+		
+		// The breakups are caused by taps that jump over the bulk of the impulse.
+		// When deltaz is at 1, we only need exactly one tap.
+		// When deltaz is 2, we need 2 additional taps to incorporate the wider bands of the adjacent impulses.
+		// When deltaz is less than 1, we need the tap of the nearest two impulses only!
+		
+		// The trouble isn't with the number of taps, but with the assumed width of each impulse!
+		// As our impulses get smaller in width, the premise of most windowing functions fails.
+		// We would have to switch to one that allows ringing to eliminate the zero-power zones.
+		// A reasonable compromise would be linear down, 2-tap Blackman-Harris or Lanczos up.
+		// This gives us nearly the same CPU performance going both directions, and adequate quality.
+		
+		// I need to test on additive versions of my wavetable oscillators before I come to a conclusion.
+		
 		for (i0 in outb.first...outb.last)
 		{
 			var zi = Std.int(z0);
 			var zd = z0 - zi;
-			// lookup table
-			//fb[i0] = fb[Std.int(table + /*s0*/(zi & (255)))] * lut(zd - 1, alpha) +
-				//fb[Std.int(table + /*s0*/((zi + 1) & (255)))] * lut(zd, alpha) +
-				//fb[Std.int(table + /*s0*/((zi + 2) & (255)))] * lut(zd + 1, alpha);
+			// lookup table (2 tap)
+			//fb[i0] = 
+				//fb[Std.int(table + (zi & (255)))] * alpha * lut(alpha * (1 - zd), fb, lutf, lutlen) +
+				//fb[Std.int(table + ((zi + 1) & (255)))] * alpha * lut(alpha * (zd), fb, lutf, lutlen);
+			// lookup table (16 tap)
+			//fb[i0] = 
+				//fb[Std.int(table + /*s0*/(zi & (255)))] * alpha * lut(alpha * (zd - 7.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s1*/((zi+1) & (255)))] * alpha * lut(alpha * (zd - 6.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s2*/((zi+2) & (255)))] * alpha * lut(alpha * (zd - 5.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s3*/((zi+3) & (255)))] * alpha * lut(alpha * (zd - 4.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s4*/((zi+4) & (255)))] * alpha * lut(alpha * (zd - 3.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s5*/((zi+5) & (255)))] * alpha * lut(alpha * (zd - 2.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s6*/((zi+6) & (255)))] * alpha * lut(alpha * (zd - 1.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s7*/((zi+7) & (255)))] * alpha * lut(alpha * (zd - 0.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s8*/((zi+8) & (255)))] * alpha * lut(alpha * (zd + 0.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s9*/((zi+9) & (255)))] * alpha * lut(alpha * (zd + 1.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s10*/((zi+10) & (255)))] * alpha * lut(alpha * (zd + 2.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s11*/((zi+11) & (255)))] * alpha * lut(alpha * (zd + 3.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s12*/((zi+12) & (255)))] * alpha * lut(alpha * (zd + 4.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s13*/((zi+13) & (255)))] * alpha * lut(alpha * (zd + 5.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s14*/((zi+14) & (255)))] * alpha * lut(alpha * (zd + 6.5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s15*/((zi+15) & (255)))] * alpha * lut(alpha * (zd + 7.5), fb, lutf, lutlen)
+				//;
 			// linear
 			fb[i0] = fb[Std.int(table + /*s0*/(zi & (255)))] * (1 - zd) + 
-					 fb[Std.int(table + /*s1*/((zi + 1) & (255)))] * zd;
+				fb[Std.int(table + /*s1*/((zi + 1) & (255)))] * zd;
 			// simple nearest
 			//fb[i0] = fb[table + (Std.int(z0 + 0.5) & (255))]; // simple nearest
 			z0 += deltaz;

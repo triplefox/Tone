@@ -125,8 +125,8 @@ class Realtime {
 		while (total < 4096) {
 			/* run a frame of tone */
 			sine.write(lfomodule);
-			var lfo_freq = (440. - tone.floatsRawBuf()[sine.out(lfomodule).first] * 439. ) / 22050;
-			//var lfo_freq = 440. / 22050;
+			//var lfo_freq = (440. - tone.floatsRawBuf()[sine.out(lfomodule).first] * 439. ) / 22050;
+			var lfo_freq = 110. / 22050;
 			sine.setWavelength(sinemodule, (lfo_freq));
 			sine.write(sinemodule);
 			wave.setWavelength(wavemodule, (lfo_freq));

@@ -252,7 +252,7 @@ class Tone {
 	
 	public function new()
 	{
-		floatallocator = new BufferAllocatorFloat(64, 32, 16, 0.);
+		floatallocator = new BufferAllocatorFloat(64, 64, 16, 0.);
 		intallocator = new BufferAllocatorInt(64, 32, 16, 0);
 		pcmallocator = new BufferAllocatorFloat(1024, 8, 16, 0.);
 		module_ids = new Map();
