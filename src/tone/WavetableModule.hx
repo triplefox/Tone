@@ -20,8 +20,9 @@ class WavetableModule {
 			var rb = tone.floatsRawBuf(); 
 			var first = tone.getFloatsBuffer(tone.buffers.a[rst]).first;
 			for (i0 in 0...1024) {
-				//rb[first + i0] = blackmanharris(0.5 - (i0/1023 / 2));
-				rb[first + i0] = lanczos((i0/1023), 3.);
+				//rb[first + i0] = blackmanharris(0.5 - (i0/1023));
+				rb[first + i0] = lanczos(((i0/1023)*4), 4.); 
+				//rb[first + i0] = lanczos((i0/511), 4.);
 			}
 		}
 	}
@@ -84,12 +85,12 @@ class WavetableModule {
 			+ 0.14128 * Math.cos(y * 2)
 			- 0.01168 * Math.cos(y * 3);
 	}
-	public inline function sinc(z : Float) {
+	public inline function sinc1(z : Float) { /* centered between -1, 1 */
 		if (z == 0) return 1.; else return Math.sin(z*Math.PI) / (z*Math.PI);
 	}
-	/* lanczos window, centered between -a, a */
+	/* lanczos window, centered between -a, a where a indicates sidelobe falloff (usually 2-4) */
 	public inline function lanczos(z : Float, a : Float) {
-		if (z > -a && z < a) return (sinc(z) * sinc(z/a));
+		if (z > -a && z < a) return (sinc1(z) * sinc1(z/a));
 		else return 0.;
 	}
 	
@@ -115,7 +116,12 @@ class WavetableModule {
 		// with mipmap i feasibly have levels for 128(2p), 64(4p), 32(8p), 16(16p).
 		// however the bigger quality difference is with the >256 wavelengths.
 		
-		var alpha = 1./deltaz;
+		// the alpha calculation is bad as I'm conflating two things:
+		//		the width of each impulse band
+		//		the ratio of amplitude area post resampling / pre resampling.
+		//		ratio should be computable through an integration of the resampling window, i think?
+		//			whatever the correct thing is, it needs to fix my power adjustment.
+		var alpha = (1/16)/deltaz;
 		var rstd = tone.floatsDeref(rst);
 		var lutf = rstd.first;
 		var lutlen = rstd.length();
@@ -138,36 +144,56 @@ class WavetableModule {
 		
 		// I need to test on additive versions of my wavetable oscillators before I come to a conclusion.
 		
+		// SRC in r8brain is a good reference: https://github.com/avaneev/r8brain-free-src
+		// it oversamples at 2x first, then interpolates that.
+		// I may want to apply that strategy instead trying to do it direct, as oversampling is an easy add:
+		//		all I have to do is plug in a fixed set of values for the kernel width and assign the result to temporaries.
+		// 2x with Blackman-Harris and then linear would probably be a major improvement, and possibly simpler than
+		// what i was trying to do.
+		
 		for (i0 in outb.first...outb.last)
 		{
 			var zi = Std.int(z0);
 			var zd = z0 - zi;
 			// lookup table (2 tap)
-			//fb[i0] = 
-				//fb[Std.int(table + (zi & (255)))] * alpha * lut(alpha * (1 - zd), fb, lutf, lutlen) +
-				//fb[Std.int(table + ((zi + 1) & (255)))] * alpha * lut(alpha * (zd), fb, lutf, lutlen);
+			//fb[i0] = alpha * (
+				//fb[Std.int(table + (zi & (255)))] * lut(alpha * (1 - zd), fb, lutf, lutlen) +
+				//fb[Std.int(table + ((zi + 1) & (255)))] * lut(alpha * (zd), fb, lutf, lutlen));
+				
+			// lookup table (4 tap)
+			//fb[i0] = alpha * (
+				//fb[Std.int(table + (zi & (255)))] * lut(alpha * (3 - zd), fb, lutf, lutlen) +
+				//fb[Std.int(table + ((zi + 1) & (255)))] * lut(alpha * (2 - zd), fb, lutf, lutlen) +
+				//fb[Std.int(table + ((zi + 2) & (255)))] * lut(alpha * (1 - zd), fb, lutf, lutlen) +
+				//fb[Std.int(table + ((zi + 3) & (255)))] * lut(alpha * (zd), fb, lutf, lutlen));
+			//
+			// triangle (2 tap)
+			//fb[i0] = alpha * (  
+				//fb[Std.int(table + (zi & (255)))] * triangle(alpha * (1 - zd)) +
+				//fb[Std.int(table + ((zi + 1) & (255)))] * triangle(alpha * (zd)));
+			
 			// lookup table (16 tap)
-			//fb[i0] = 
-				//fb[Std.int(table + /*s0*/(zi & (255)))] * alpha * lut(alpha * (zd - 7.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s1*/((zi+1) & (255)))] * alpha * lut(alpha * (zd - 6.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s2*/((zi+2) & (255)))] * alpha * lut(alpha * (zd - 5.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s3*/((zi+3) & (255)))] * alpha * lut(alpha * (zd - 4.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s4*/((zi+4) & (255)))] * alpha * lut(alpha * (zd - 3.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s5*/((zi+5) & (255)))] * alpha * lut(alpha * (zd - 2.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s6*/((zi+6) & (255)))] * alpha * lut(alpha * (zd - 1.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s7*/((zi+7) & (255)))] * alpha * lut(alpha * (zd - 0.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s8*/((zi+8) & (255)))] * alpha * lut(alpha * (zd + 0.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s9*/((zi+9) & (255)))] * alpha * lut(alpha * (zd + 1.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s10*/((zi+10) & (255)))] * alpha * lut(alpha * (zd + 2.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s11*/((zi+11) & (255)))] * alpha * lut(alpha * (zd + 3.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s12*/((zi+12) & (255)))] * alpha * lut(alpha * (zd + 4.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s13*/((zi+13) & (255)))] * alpha * lut(alpha * (zd + 5.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s14*/((zi+14) & (255)))] * alpha * lut(alpha * (zd + 6.5), fb, lutf, lutlen) +
-				//fb[Std.int(table + /*s15*/((zi+15) & (255)))] * alpha * lut(alpha * (zd + 7.5), fb, lutf, lutlen)
-				//;
+			fb[i0] = alpha * (
+				fb[Std.int(table + /*s0*/(zi & (255)))] * lut(alpha * (15 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s1*/((zi+1) & (255)))] * lut(alpha * (14 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s2*/((zi+2) & (255)))] * lut(alpha * (13 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s3*/((zi+3) & (255)))] * lut(alpha * (12 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s4*/((zi+4) & (255)))] * lut(alpha * (11 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s5*/((zi+5) & (255)))] * lut(alpha * (10 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s6*/((zi+6) & (255)))] * lut(alpha * (9 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s7*/((zi+7) & (255)))] * lut(alpha * (8 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s8*/((zi+8) & (255)))] * lut(alpha * (7 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s9*/((zi+9) & (255)))] * lut(alpha * (6 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s10*/((zi+10) & (255)))] * lut(alpha * (5 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s11*/((zi+11) & (255)))] * lut(alpha * (4 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s12*/((zi+12) & (255)))] * lut(alpha * (3 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s13*/((zi+13) & (255)))] * lut(alpha * (2 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s14*/((zi+14) & (255)))] * lut(alpha * (1 - zd), fb, lutf, lutlen) +
+				fb[Std.int(table + /*s15*/((zi+15) & (255)))] * lut(alpha * (zd), fb, lutf, lutlen))
+				;
 			// linear
-			fb[i0] = fb[Std.int(table + /*s0*/(zi & (255)))] * (1 - zd) + 
-				fb[Std.int(table + /*s1*/((zi + 1) & (255)))] * zd;
+			//fb[i0] = fb[Std.int(table + /*s0*/(zi & (255)))] * (1 - zd) + 
+				//fb[Std.int(table + /*s1*/((zi + 1) & (255)))] * zd;
 			// simple nearest
 			//fb[i0] = fb[table + (Std.int(z0 + 0.5) & (255))]; // simple nearest
 			z0 += deltaz;
