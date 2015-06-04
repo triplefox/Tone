@@ -98,10 +98,12 @@ class Realtime {
 		wave.setWavelength(wavemodule, 440. / 22050);
 		//for (i0 in 0...128) wave.setTable(wavemodule, i0, 0.25); // sqr(1)
 		//for (i0 in 128...256) wave.setTable(wavemodule, i0, -0.25); // sqr(2)
-		for (i0 in 0...128) wave.setTable(wavemodule, i0, 0.25 * i0/128); // saw(1)
-		for (i0 in 0...128) wave.setTable(wavemodule, i0 + 128, 0.25 * i0/128 - 0.25); // saw(2)
+		//for (i0 in 0...128) wave.setTable(wavemodule, i0, 0.25 * i0/128); // saw(1)
+		//for (i0 in 0...128) wave.setTable(wavemodule, i0 + 128, 0.25 * i0/128 - 0.25); // saw(2)
 		//for (i0 in 0...256) wave.setTable(wavemodule, i0, 0.5); // flat
 		//for (i0 in 0...256) wave.setTable(wavemodule, i0, Math.sin((i0*Math.PI*2)/255)); // sine
+		
+		wave.preset(wavemodule, Triangle);
 		
 		lfomodule = sine.spawn(tone.spawnFloats(128));
 		sine.setWavelength(lfomodule, 0.01 / 22050);
@@ -127,9 +129,10 @@ class Realtime {
 		while (total < 4096) {
 			/* run a frame of tone */
 			sine.write(lfomodule);
-			var lfo_freq = (880. + tone.floatsRawBuf()[sine.out(lfomodule).first] * 879. ) / 22050;
+			var lfo_freq = (220. + tone.floatsRawBuf()[sine.out(lfomodule).first] * 219. ) / 22050;
 			//var lfo_freq = ((22050/256) + tone.floatsRawBuf()[sine.out(lfomodule).first] * 10. ) / 22050;
 			//var lfo_freq = (22050 / 256) / 22050;
+			//var lfo_freq = 440 / 22050;
 			sine.setWavelength(sinemodule, (lfo_freq));
 			sine.write(sinemodule);
 			wave.setWavelength(wavemodule, (lfo_freq));
