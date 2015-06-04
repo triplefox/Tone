@@ -21,8 +21,8 @@ class WavetableModule {
 			var first = tone.getFloatsBuffer(tone.buffers.a[rst]).first;
 			for (i0 in 0...1024) {
 				//rb[first + i0] = blackmanharris(0.5 - (i0/1023));
-				rb[first + i0] = lanczos(((i0/1023)*4), 4.); 
-				//rb[first + i0] = lanczos((i0/511), 4.);
+				rb[first + i0] = lanczos(((i0/1023)), 5.); 
+				//rb[first + i0] = lanczos((i0/511), 5.);
 			}
 		}
 	}
@@ -77,6 +77,10 @@ class WavetableModule {
 	public inline function triangle(z : Float) {
 		return Math.max(0., 1 - Math.abs(z));
 	}
+	/* triangle resampler. z is offset, centered between 0.0, 1.0 */
+	public inline function triangle2(z : Float) {
+		return Math.max(0., 0.5 - Math.abs(z))*2;
+	}
 	/* blackman-harris window, centered between 0.0, 1.0 */
 	public inline function blackmanharris(z : Float) {
 		var y = 2 * Math.PI * z;
@@ -121,7 +125,7 @@ class WavetableModule {
 		//		the ratio of amplitude area post resampling / pre resampling.
 		//		ratio should be computable through an integration of the resampling window, i think?
 		//			whatever the correct thing is, it needs to fix my power adjustment.
-		var alpha = (1/16)/deltaz;
+		var alpha = 1/deltaz;
 		var rstd = tone.floatsDeref(rst);
 		var lutf = rstd.first;
 		var lutlen = rstd.length();
@@ -151,49 +155,144 @@ class WavetableModule {
 		// 2x with Blackman-Harris and then linear would probably be a major improvement, and possibly simpler than
 		// what i was trying to do.
 		
+		
+		// result of studies in oversampling:
+		// we can get pretty good results, but for the naive waveforms, it's actually far better to resort to linear
+		// interpolation for upsampling!
+		
+		// and as we already knew, for downsampling, we need to low pass it.
+		// lanczos is proving to be preferable for resampling(which i guess shouldn't be a surprise)
+		
+		var tap2x0 = lanczos(-2/2., 2.);
+		var tap2x1 = lanczos(-1/2., 2.);
+		var tap2x2 = lanczos(0., 2.);
+		var tap2x3 = tap2x1;
+		var tap2x4 = tap2x0;
+		
+		var tap4x0 = lanczos(-3/2., 5.);
+		var tap4x1 = lanczos(-2/2., 5.);
+		var tap4x2 = lanczos(-1/2., 5.);
+		var tap4x3 = lanczos(0., 5.);
+		var tap4x4 = tap4x2;
+		var tap4x5 = tap4x1;
+		var tap4x6 = tap4x0;
+		
 		for (i0 in outb.first...outb.last)
 		{
 			var zi = Std.int(z0);
 			var zd = z0 - zi;
+			
+			// lanczos(2 tap)
+			//fb[i0] = 0.5 * (
+				//fb[Std.int(table + (zi & (255)))] * lanczos(alpha * (zd - 1), 5.) +
+				//fb[Std.int(table + ((zi + 1) & (255)))] * lanczos(alpha * (zd), 5.));
+			
+			// lanczos(3 tap)
+			//fb[i0] = 0.333333333 * (
+				//fb[Std.int(table + (zi & (255)))] * lanczos(alpha * (zd - 1), 5.) +
+				//fb[Std.int(table + ((zi + 1) & (255)))] * lanczos(alpha * (zd), 5.) +
+				//fb[Std.int(table + ((zi + 2) & (255)))] * lanczos(alpha * (zd + 1), 5.));
+			
+			// lanczos(4 tap)
+			//fb[i0] = 0.25 * (
+				//fb[Std.int(table + (zi & (255)))] * lanczos(alpha * (zd - 2), 5.) +
+				//fb[Std.int(table + ((zi + 1) & (255)))] * lanczos(alpha * (zd - 1), 5.) +
+				//fb[Std.int(table + ((zi + 2) & (255)))] * lanczos(alpha * (zd), 5.) +
+				//fb[Std.int(table + ((zi + 3) & (255)))] * lanczos(alpha * (zd + 1), 5.));
+			
+			// lanczos(6 tap)
+			if (deltaz > 1) {
+			fb[i0] = alpha * (
+				fb[Std.int(table + (zi & (255)))] * lanczos(alpha * (zd - 3), 5.) +
+				fb[Std.int(table + ((zi + 1) & (255)))] * lanczos(alpha * (zd - 2), 5.) +
+				fb[Std.int(table + ((zi + 2) & (255)))] * lanczos(alpha * (zd - 1), 5.) +
+				fb[Std.int(table + ((zi + 3) & (255)))] * lanczos(alpha * (zd), 5.) +
+				fb[Std.int(table + ((zi + 4) & (255)))] * lanczos(alpha * (zd + 1), 5.) +
+				fb[Std.int(table + ((zi + 5) & (255)))] * lanczos(alpha * (zd + 2), 5.));
+			}
+			else {
+				var low = fb[Std.int(table + /*s0*/(zi & (255)))];
+				var hi = fb[Std.int(table + /*s1*/((zi + 1) & (255)))];
+				fb[i0] = (hi - low) * zd + low;
+			}
+			
 			// lookup table (2 tap)
-			//fb[i0] = alpha * (
+			//fb[i0] = 0.5 * (
 				//fb[Std.int(table + (zi & (255)))] * lut(alpha * (1 - zd), fb, lutf, lutlen) +
 				//fb[Std.int(table + ((zi + 1) & (255)))] * lut(alpha * (zd), fb, lutf, lutlen));
 				
 			// lookup table (4 tap)
-			//fb[i0] = alpha * (
-				//fb[Std.int(table + (zi & (255)))] * lut(alpha * (3 - zd), fb, lutf, lutlen) +
-				//fb[Std.int(table + ((zi + 1) & (255)))] * lut(alpha * (2 - zd), fb, lutf, lutlen) +
-				//fb[Std.int(table + ((zi + 2) & (255)))] * lut(alpha * (1 - zd), fb, lutf, lutlen) +
-				//fb[Std.int(table + ((zi + 3) & (255)))] * lut(alpha * (zd), fb, lutf, lutlen));
-			//
+			//fb[i0] = 0.25 * (
+				//fb[Std.int(table + (zi & (255)))] * lut(alpha * (zd - 2), fb, lutf, lutlen) +
+				//fb[Std.int(table + ((zi + 1) & (255)))] * lut(alpha * (zd - 1), fb, lutf, lutlen) +
+				//fb[Std.int(table + ((zi + 2) & (255)))] * lut(alpha * (zd), fb, lutf, lutlen) +
+				//fb[Std.int(table + ((zi + 3) & (255)))] * lut(alpha * (zd + 1), fb, lutf, lutlen));
+			
 			// triangle (2 tap)
 			//fb[i0] = alpha * (  
 				//fb[Std.int(table + (zi & (255)))] * triangle(alpha * (1 - zd)) +
 				//fb[Std.int(table + ((zi + 1) & (255)))] * triangle(alpha * (zd)));
 			
 			// lookup table (16 tap)
-			fb[i0] = alpha * (
-				fb[Std.int(table + /*s0*/(zi & (255)))] * lut(alpha * (15 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s1*/((zi+1) & (255)))] * lut(alpha * (14 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s2*/((zi+2) & (255)))] * lut(alpha * (13 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s3*/((zi+3) & (255)))] * lut(alpha * (12 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s4*/((zi+4) & (255)))] * lut(alpha * (11 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s5*/((zi+5) & (255)))] * lut(alpha * (10 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s6*/((zi+6) & (255)))] * lut(alpha * (9 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s7*/((zi+7) & (255)))] * lut(alpha * (8 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s8*/((zi+8) & (255)))] * lut(alpha * (7 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s9*/((zi+9) & (255)))] * lut(alpha * (6 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s10*/((zi+10) & (255)))] * lut(alpha * (5 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s11*/((zi+11) & (255)))] * lut(alpha * (4 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s12*/((zi+12) & (255)))] * lut(alpha * (3 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s13*/((zi+13) & (255)))] * lut(alpha * (2 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s14*/((zi+14) & (255)))] * lut(alpha * (1 - zd), fb, lutf, lutlen) +
-				fb[Std.int(table + /*s15*/((zi+15) & (255)))] * lut(alpha * (zd), fb, lutf, lutlen))
-				;
+			//if (deltaz > 1) {
+			//fb[i0] = (
+				//fb[Std.int(table + /*s0*/(zi & (255)))] * lut(alpha * (zd - 8), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s1*/((zi+1) & (255)))] * lut(alpha * (zd - 7), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s2*/((zi+2) & (255)))] * lut(alpha * (zd - 6), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s3*/((zi+3) & (255)))] * lut(alpha * (zd - 5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s4*/((zi+4) & (255)))] * lut(alpha * (zd - 4), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s5*/((zi+5) & (255)))] * lut(alpha * (zd - 3), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s6*/((zi+6) & (255)))] * lut(alpha * (zd - 2), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s7*/((zi+7) & (255)))] * lut(alpha * (zd - 1), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s8*/((zi+8) & (255)))] * lut(alpha * (zd), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s9*/((zi+9) & (255)))] * lut(alpha * (zd + 1), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s10*/((zi+10) & (255)))] * lut(alpha * (zd + 2), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s11*/((zi+11) & (255)))] * lut(alpha * (zd + 3), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s12*/((zi+12) & (255)))] * lut(alpha * (zd + 4), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s13*/((zi+13) & (255)))] * lut(alpha * (zd + 5), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s14*/((zi+14) & (255)))] * lut(alpha * (zd + 6), fb, lutf, lutlen) +
+				//fb[Std.int(table + /*s15*/((zi+15) & (255)))] * lut(alpha * (zd + 7), fb, lutf, lutlen))
+				//;
+			//}
+			//else {
+				//var low = fb[Std.int(table + /*s0*/(zi & (255)))];
+				//var hi = fb[Std.int(table + /*s1*/((zi + 1) & (255)))];
+				//fb[i0] = (hi - low) * zd + low;
+			//} 
+			// linear (1.5x oversampled)
+			//var left = fb[Std.int(table + /*s0*/(zi & (255)))];
+			//var right = fb[Std.int(table + /*s1*/((zi + 1) & (255)))];
+			//var vd = [
+				//tap2x2 * left + tap2x0 * right,
+				//tap2x3 * left + tap2x1 * right,
+				//tap2x4 * left + tap2x2 * right,
+				//tap2x3 * right
+			//];
+			//var z1 = Math.max(0., Math.min(1., (((zd - 0.5) * alpha) + 0.5))) * (vd.length-2);
+			//var zi2 = Std.int(z1);
+			//var zd2 = z1 - zi2;
+			//fb[i0] = (vd[zi2 + 1] - vd[zi2]) * zd2 + vd[zi2];
+			
+			// linear (3x oversampled)
+			//var left = fb[Std.int(table + /*s0*/(zi & (255)))];
+			//var right = fb[Std.int(table + /*s1*/((zi + 1) & (255)))];
+			//var vd = [
+				//tap4x3 * left + tap4x0 * right,
+				//tap4x4 * left + tap4x1 * right,
+				//tap4x5 * left + tap4x2 * right,
+				//tap4x6 * left + tap4x3 * right,
+				//tap4x4 * right
+			//];
+			//var z1 = Math.max(0., Math.min(1., (((zd - 0.5) * alpha) + 0.5))) * (vd.length-2);
+			//var zi2 = Std.int(z1);
+			//var zd2 = z1 - zi2;
+			//fb[i0] = (vd[zi2 + 1] - vd[zi2]) * zd2 + vd[zi2];
+			//if (!Math.isFinite(fb[i0])) throw [z1,fb[i0], vd[zi2], vd[zi2+1], zd2, left, right,vd[0],vd[1],vd[2],vd[3]];
+			
 			// linear
-			//fb[i0] = fb[Std.int(table + /*s0*/(zi & (255)))] * (1 - zd) + 
-				//fb[Std.int(table + /*s1*/((zi + 1) & (255)))] * zd;
+			//var low = fb[Std.int(table + /*s0*/(zi & (255)))];
+			//var hi = fb[Std.int(table + /*s1*/((zi + 1) & (255)))];
+			//fb[i0] = (hi - low) * zd + low;
 			// simple nearest
 			//fb[i0] = fb[table + (Std.int(z0 + 0.5) & (255))]; // simple nearest
 			z0 += deltaz;
