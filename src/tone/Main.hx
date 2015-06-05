@@ -109,7 +109,7 @@ class Realtime {
 		var sintab = tone.spawnFloats(4096);
 		OscillatorAlgorithm.sine(tone.floatallocator, tone.floatsDeref(sintab));
 		OscillatorAlgorithm.preset(tone.floatallocator, modbuf, tone.floatsDeref(sintab), 
-			Triangle, 256 / 22050, 22050);
+			Sawtooth, 256 / 22050, 22050);
 		
 		lfomodule = sine.spawn(tone.spawnFloats(128));
 		sine.setWavelength(lfomodule, 0.01 / 22050);

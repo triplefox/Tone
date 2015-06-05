@@ -41,7 +41,6 @@ class OscillatorAlgorithm {
 		
 		var sine = sinetable.first;
 		var sintab_length = sinetable.length();
-		var sintab = Vector.fromArrayCopy([for (n in 0...sintab_length) Math.sin(n / (sintab_length - 1) * Math.PI * 2)]);
 		
 		var base_scale = 2 / Math.PI * 0.45;
 		
@@ -58,7 +57,7 @@ class OscillatorAlgorithm {
 				var oo = 1;
 				while (oo < octaves) 
 				{
-					result = result + sintab[i * oo & (sintab_length - 1)] * sign / oo;
+					result = result + buffer[sine + (i * oo & (sintab_length - 1))] * sign / oo;
 					sign = -sign;
 					oo++;
 					if (oo * ofreq > CUTOFF) break; // cut off octaves too high to render accurately
@@ -87,8 +86,8 @@ class OscillatorAlgorithm {
 				{
 					// general additive rectangular function (cos * sin) (note: does not look like a square)
 					result = result + 
-						sintab[Std.int((i + hpi) * oo) & (sintab_length - 1)] *
-						sintab[Std.int(oo * pw * hpi) & (sintab_length - 1)]
+						buffer[sine + (Std.int((i + hpi) * oo) & (sintab_length - 1))] *
+						buffer[sine + (Std.int(oo * pw * hpi) & (sintab_length - 1))]
 						/ oo;
 					oo+=1;
 					if (oo * ofreq > CUTOFF) break; // cut off octaves too high to render accurately
@@ -110,7 +109,7 @@ class OscillatorAlgorithm {
 				var oo = 1;
 				while (oo < octaves) 
 				{
-					result = result + sintab[i * oo & (sintab_length - 1)] * sign / (oo*oo);
+					result = result + buffer[sine + (i * oo & (sintab_length - 1))] * sign / (oo*oo);
 					sign = -sign;
 					oo+=2;
 					if (oo * ofreq > CUTOFF) break; // cut off octaves too high to render accurately
@@ -126,12 +125,10 @@ class OscillatorAlgorithm {
 			for (pos in 0...hw)
 			{
 				buffer[start + pos + hw] = -buffer[start + hw - pos];
-				//setTable(mi, pos + hw, -getTable(mi, hw - pos));
 			}
 		}
 		
 		// we pad by one because it's possible for the reader to jump over by one with FP error.
-		//setTable(mi, TABLE_LEN, getTable(mi, 0));
 		buffer[start + length] = buffer[start];
 		
 	}	
