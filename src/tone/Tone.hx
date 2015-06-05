@@ -2,7 +2,7 @@ package tone;
 import haxe.ds.Vector;
 import lime.app.Module;
 
-enum BufferType { Missing; Floats; Integers; PCM; }
+enum BufferType { Missing; Floats; Integers; }
 
 class BufferRef { /* references buffer and type of buffer */
 	public var buffer_id : Int;
@@ -77,10 +77,10 @@ class BufferAllocatorFloat
 		var s0 = size + padding;
 		var c0 = Std.int(Math.ceil(s0 / slabsize));
 		var i0 = alloc_ptr;
-		while (i0 < slaballoc.length)
+		while (i0 + c0 < slaballoc.length)
 		{
 			var ok = true;
-			for (i1 in i0...i0 + c0)
+			for (i1 in i0...i0 + c0 + 1)
 			{
 				if (slaballoc[i1])
 				{
@@ -92,7 +92,7 @@ class BufferAllocatorFloat
 				var obj = buffer.a[buffer.spawn()];
 				obj.chunkfirst = i0;
 				obj.chunklen = c0;
-				for (i1 in i0...i0 + c0)
+				for (i1 in i0...i0 + c0 + 1)
 				{
 					slaballoc[i1] = true;
 				}
@@ -175,10 +175,10 @@ class BufferAllocatorInt
 		var s0 = size + padding;
 		var c0 = Std.int(Math.ceil(s0 / slabsize));
 		var i0 = 0;
-		while (i0 < slaballoc.length)
+		while (i0 + c0 < slaballoc.length)
 		{
 			var ok = true;
-			for (i1 in i0...i0 + c0)
+			for (i1 in i0...i0 + c0 + 1)
 			{
 				if (slaballoc[i1])
 				{
@@ -190,7 +190,7 @@ class BufferAllocatorInt
 				var obj = buffer.a[buffer.spawn()];
 				obj.chunkfirst = i0;
 				obj.chunklen = c0;
-				for (i1 in i0...i0 + c0)
+				for (i1 in i0...i0 + c0 + 1)
 				{
 					slaballoc[i1] = true;
 				}
@@ -235,7 +235,6 @@ class Module {
 
 class Tone {
 
-	public var pcmallocator : BufferAllocatorFloat; /* large PCM data */
 	public var floatallocator : BufferAllocatorFloat; /* float parameters and processing intermediates */ 
 	public var intallocator : BufferAllocatorInt; /* integer parameters and processing intermediates */
 	public var buffers : LifeArray<BufferRef>;
@@ -254,7 +253,6 @@ class Tone {
 	{
 		floatallocator = new BufferAllocatorFloat(64, 64, 16, 0.);
 		intallocator = new BufferAllocatorInt(64, 32, 16, 0);
-		pcmallocator = new BufferAllocatorFloat(1024, 8, 16, 0.);
 		module_ids = new Map();
 		
 		buffers = new LifeArray("buffers", [for (i0 in 0...128) new BufferRef()]);
@@ -269,8 +267,6 @@ class Tone {
 				switch(obj.type)
 				{
 					case Missing:
-					case PCM:
-						pcmallocator.freeBuffer(obj.buffer_id);
 					case Floats:
 						floatallocator.freeBuffer(obj.buffer_id);
 					case Integers:						
@@ -343,29 +339,10 @@ class Tone {
 		return b1;
 	}
 	
-	public function getPCMBuffer(b0 : BufferRef) : Buffer {
-		if (b0.type == PCM) {
-			return pcmallocator.buffer.a[b0.buffer_id];
-		}
-		else { throw "wrong BufferProxy type, expected PCM, got " + Std.string(b0.type);
-			return null;
-		}
-	}	
-	public function spawnPCM(size : Int) : Int {
-		var b0 = pcmallocator.allocBuffer(size);
-		var b1 = buffers.spawn();
-		var b2 = buffers.a[b1];
-		b2.type = PCM;
-		b2.buffer_id = b0;
-		return b1;
-	}
-	
 	public function floatsRawBuf() { return floatallocator.rawbuf; }
 	public function floatsDeref(buf0 : Int) { return getFloatsBuffer(buffers.a[buf0]); }
 	public function intsRawBuf() { return intallocator.rawbuf; }
 	public function intsDeref(buf0 : Int) { return getIntsBuffer(buffers.a[buf0]); }
-	public function PCMRawBuf() { return pcmallocator.rawbuf; }
-	public function PCMDeref(buf0 : Int) { return getPCMBuffer(buffers.a[buf0]); }
 	public function module(m0 : Int) { return modules.a[m0]; }	
 	
 	public function copyFloats(b0 : Buffer, b1 : Buffer, b0_start : Int, b1_start : Int, len : Int) {

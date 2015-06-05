@@ -1,14 +1,6 @@
 package tone;
 import haxe.ds.Vector;
 
-enum OscillatorType {
-	Sawtooth;
-	Square;
-	Pulse25;
-	Pulse12;
-	Triangle;
-}
-
 class WavetableModule {
 
 	/* a 256-sample wavetable with linear resampling. */
@@ -76,6 +68,14 @@ class WavetableModule {
 		floatallocator.rawbuf[wavetableb.first + (idx & 255)] = v;
 	}
 	
+	public inline function tableBuffer(mi : Int) {
+		var modules = tone.modules;
+		var buffers = tone.buffers;
+		var floatallocator = tone.floatallocator;
+		var m0 = modules.a[mi]; if (!modules.z[mi]) throw 'module $mi used when not alive';
+		return tone.getFloatsBuffer(buffers.a[m0.buf_ref[2]]);
+	}
+	
 	public inline function getTable(mi : Int, idx : Int) : Float {
 		var modules = tone.modules;
 		var buffers = tone.buffers;
@@ -83,125 +83,6 @@ class WavetableModule {
 		var m0 = modules.a[mi]; if (!modules.z[mi]) throw 'module $mi used when not alive';
 		var wavetableb = tone.getFloatsBuffer(buffers.a[m0.buf_ref[2]]);
 		return floatallocator.rawbuf[wavetableb.first + (idx & 255)];
-	}
-	
-	public inline function preset(mi : Int, oscillator : OscillatorType) {
-		
-		var frequency = 440;
-		
-		// we cache every midi note to quarter-step accuracy. (This biases towards even temperament...oh well)
-		//var cacheidx = Std.int((12 * (Math.log(frequency / 440.) / Math.log(2))) * 4);
-		//frequency = (Math.pow(2, (cacheidx / 4) / 12) * 440); // snap computed freq
-		//var snap = wtCache[oscillator].get(cacheidx);
-		//if (snap != null) return snap;
-		
-		// create an additive signal!
-		
-		var SAMPLERATE = 22050;
-		
-		var CUTOFF = 1 / 2; // points needed to render a sine
-		var octaves = 1;
-		while (frequency*octaves < SAMPLERATE) { octaves++; }
-		octaves = octaves >> 1;
-		if (octaves < 1) octaves = 1;
-		var wt_length = TABLE_LEN - 1;
-		
-		var hw = wt_length >> 1;
-		
-		var SEQRES = 4096;
-		var sintab = Vector.fromArrayCopy([for (n in 0...SEQRES) Math.sin(n / SEQRES * Math.PI * 2)]);
-		var sintab_length = sintab.length - 1;
-		
-		var base_scale = 2 / Math.PI * 0.45;
-		
-		if (oscillator == Sawtooth)
-		{
-			var scale = base_scale * 0.95;
-			for (pos in 0...hw)
-			{
-				var result = 0.;
-				var sign = -1;
-				var ofreq = 1 / wt_length;
-				var i = Math.round(pos / wt_length * sintab_length);
-				
-				var oo = 1;
-				while (oo < octaves) 
-				{
-					result = result + sintab[i * oo & (sintab_length - 1)] * sign / oo;
-					sign = -sign;
-					oo++;
-					if (oo * ofreq > CUTOFF) break; // cut off octaves too high to render accurately
-				}
-				
-				setTable(mi, pos, result * scale);
-			}
-		}
-		else if (oscillator == Square || oscillator == Pulse25 || oscillator == Pulse12)
-		{
-			// TODO: None of these look like what I expect...
-			var scale = base_scale;
-			var wt_length = wt_length;
-			var pw = 0.5;
-			if (oscillator == Pulse25) { pw = 0.25; scale *= 1.2; }
-			else if (oscillator == Pulse12) { pw = 0.125; scale *= 1.37; }
-			else scale *= 1.4;
-			var hpi = sintab_length >> 1;
-			for (pos in 0...hw)
-			{
-				var result = 0.;
-				var ofreq = 1 / wt_length;
-				var i = Math.round(pos / wt_length * sintab_length);
-				
-				var oo = 1;
-				while (oo < octaves) 
-				{
-					// general additive rectangular function (cos * sin)
-					result = result + 
-						sintab[Std.int((i + hpi) * oo) & (sintab_length - 1)] *
-						sintab[Std.int(oo * pw * hpi) & (sintab_length - 1)]
-						/ oo;
-					oo+=1;
-					if (oo * ofreq > CUTOFF) break; // cut off octaves too high to render accurately
-				}
-				
-				setTable(mi, pos, result * scale);
-			}			
-		}
-		else if (oscillator == Triangle)
-		{
-			var scale = base_scale * 2.5;
-			for (pos in 0...hw)
-			{
-				var result = 0.;
-				var sign = -1;
-				var ofreq = 1 / wt_length;
-				var i = Math.round(pos / wt_length * sintab_length);
-				
-				var oo = 1;
-				while (oo < octaves) 
-				{
-					result = result + sintab[i * oo & (sintab_length - 1)] * sign / (oo*oo);
-					sign = -sign;
-					oo+=2;
-					if (oo * ofreq > CUTOFF) break; // cut off octaves too high to render accurately
-				}
-				
-				setTable(mi, pos, result * scale);
-			}
-		}
-		
-		// we only compute half, and mirror the waveform at the halfway point.
-		
-		{
-			for (pos in 0...hw)
-			{
-				setTable(mi, pos + hw, -getTable(mi, hw - pos));
-			}
-		}
-		
-		// we pad by one because it's possible for the reader to jump over by one with FP error.
-		setTable(mi, TABLE_LEN, getTable(mi, 0));
-		
 	}
 	
 	public function out(mi : Int) {
@@ -301,6 +182,25 @@ class WavetableModule {
 		// and as we already knew, for downsampling, we need to low pass it.
 		// lanczos is proving to be preferable for resampling(which i guess shouldn't be a surprise)
 		
+		/* Final assessment:
+		 * 
+		 * For the wavetable, we can splash out on mipmaps and do a linear interpolation on those.
+		 * This is a good blend of convenience and quality: We load in a wavetable and then specify how many
+		 * mip levels, and at which wavelengths.
+		 * Subsequently we have a lookup function that returns the correct mipmap for a particular wavelength.
+		 * 
+		 * Having the API work with wavelengths is preferable to frequency, since base sample rates may vary.
+		 * 
+		 * The API will _not_ specify the resampling method, just decimation. It's up to the user to
+		 * load correct mipmaps. I'll move all this resampling/osc-generation code elsewhere at some point.
+		 * 
+		 * For PCM data(in the future), the easy win is octave mipmapping at load with an IIR,
+		 * as I did long ago.
+		 * 
+		 * */
+		
+		
+		
 		var tap2x0 = lanczos(-2/2., 2.);
 		var tap2x1 = lanczos(-1/2., 2.);
 		var tap2x2 = lanczos(0., 2.);
@@ -339,7 +239,7 @@ class WavetableModule {
 				//fb[Std.int(table + ((zi + 3) & (255)))] * lanczos(alpha * (zd + 1), 5.));
 			
 			// lanczos(6 tap)
-			if (deltaz > 1) {
+			if (deltaz > 3) {
 			fb[i0] = alpha * (
 				fb[Std.int(table + (zi & (255)))] * lanczos(alpha * (zd - 3), 5.) +
 				fb[Std.int(table + ((zi + 1) & (255)))] * lanczos(alpha * (zd - 2), 5.) +
@@ -347,6 +247,18 @@ class WavetableModule {
 				fb[Std.int(table + ((zi + 3) & (255)))] * lanczos(alpha * (zd), 5.) +
 				fb[Std.int(table + ((zi + 4) & (255)))] * lanczos(alpha * (zd + 1), 5.) +
 				fb[Std.int(table + ((zi + 5) & (255)))] * lanczos(alpha * (zd + 2), 5.));
+			}
+			else if (deltaz > 2) {
+			fb[i0] = alpha * (
+				fb[Std.int(table + (zi & (255)))] * lanczos(alpha * (zd - 2), 5.) +
+				fb[Std.int(table + ((zi + 1) & (255)))] * lanczos(alpha * (zd - 1), 5.) +
+				fb[Std.int(table + ((zi + 2) & (255)))] * lanczos(alpha * (zd), 5.) +
+				fb[Std.int(table + ((zi + 3) & (255)))] * lanczos(alpha * (zd + 1), 5.));
+			}
+			else if (deltaz > 1) {
+			fb[i0] = 0.5 * (
+				fb[Std.int(table + (zi & (255)))] * lanczos(alpha * (zd - 1), 5.) +
+				fb[Std.int(table + ((zi + 1) & (255)))] * lanczos(alpha * (zd), 5.));
 			}
 			else {
 				var low = fb[Std.int(table + /*s0*/(zi & (255)))];

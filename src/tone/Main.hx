@@ -11,6 +11,7 @@ import openfl.Lib;
 import openfl.media.Sound;
 import openfl.media.SoundChannel;
 import tone.Tone;
+import tone.OscillatorAlgorithm;
 
 /**
  * ...
@@ -101,9 +102,14 @@ class Realtime {
 		//for (i0 in 0...128) wave.setTable(wavemodule, i0, 0.25 * i0/128); // saw(1)
 		//for (i0 in 0...128) wave.setTable(wavemodule, i0 + 128, 0.25 * i0/128 - 0.25); // saw(2)
 		//for (i0 in 0...256) wave.setTable(wavemodule, i0, 0.5); // flat
-		//for (i0 in 0...256) wave.setTable(wavemodule, i0, Math.sin((i0*Math.PI*2)/255)); // sine
+		//for (i0 in 0...256) wave.setTable(wavemodule, i0, Math.sin((i0*Math.PI*2)/255) * 0.5); // sine
 		
-		wave.preset(wavemodule, Triangle);
+		//wave.preset(wavemodule, Pulse25);
+		var modbuf = wave.tableBuffer(wavemodule);
+		var sintab = tone.spawnFloats(4096);
+		OscillatorAlgorithm.sine(tone.floatallocator, tone.floatsDeref(sintab));
+		OscillatorAlgorithm.preset(tone.floatallocator, modbuf, tone.floatsDeref(sintab), 
+			Triangle, 256 / 22050, 22050);
 		
 		lfomodule = sine.spawn(tone.spawnFloats(128));
 		sine.setWavelength(lfomodule, 0.01 / 22050);
