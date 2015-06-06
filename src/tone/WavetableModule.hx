@@ -41,6 +41,7 @@ class WavetableModule {
 		module.module_id = module_id;
 		module.module_type = 0;
 		module.pcm_info = [pcm.spawn()];
+		// FIXME: we don't use the pcm info at all, and it's incorrect too.
 		pcm.a[module.pcm_info[0]].samplerate = 44100;
 		pcm.a[module.pcm_info[0]].channels = 1;
 		return module0;
@@ -123,6 +124,7 @@ class WavetableModule {
 	}
 	
 	public function write(mi : Int) {
+		
 		var modules = tone.modules;
 		var buffers = tone.buffers;
 		var floatallocator = tone.floatallocator;
