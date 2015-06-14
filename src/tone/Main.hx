@@ -76,9 +76,11 @@ class Realtime {
 	public var tone : Tone;
 	public var sine : SineModule;
 	public var wave : WavetableModule;
+	public var sosc : SimpleOscModule;
 	public var tonebuf : Buffer;
 	public var sinemodule : Int;
-	public var wavemodule : Int;
+	//public var wavemodule : Int;
+	public var soscmodule : Int;
 	public var lfomodule : Int;
 	
 	public function new() {
@@ -89,14 +91,22 @@ class Realtime {
 		if (tone == null) throw "Tone is not set on Realtime";
 		if (sine == null) throw "SineModule is not set on Realtime";
 		if (wave == null) throw "WavetableModule is not set on Realtime";
+		if (sosc == null) throw "SimpleOscModule is not set on Realtime";
 		if (tonebuf == null) throw "Realtime doesn't have a Buffer to copy from";
 		if (snd != null) stop();
 		snd = new Sound();
-		sinemodule = sine.spawn(tone.spawnFloats(128));
+		
+		var buflen = tonebuf.length() >> 1; // run all oscillators in mono
+		
+		sinemodule = sine.spawn(tone.spawnFloats(buflen));
 		sine.setWavelength(sinemodule, 440. / 22050);
 		
-		wavemodule = wave.spawn(tone.spawnFloats(128));
-		wave.setWavelength(wavemodule, 440. / 22050);
+		soscmodule = sosc.spawn(tone.spawnFloats(buflen));
+		sosc.setWavelength(soscmodule, 440. / 22050);
+		sosc.setType(soscmodule, 3);
+		
+		//wavemodule = wave.spawn(tone.spawnFloats(buflen));
+		//wave.setWavelength(wavemodule, 440. / 22050);
 		//for (i0 in 0...128) wave.setTable(wavemodule, i0, 0.25); // sqr(1)
 		//for (i0 in 128...256) wave.setTable(wavemodule, i0, -0.25); // sqr(2)
 		//for (i0 in 0...128) wave.setTable(wavemodule, i0, 0.25 * i0/128); // saw(1)
@@ -105,13 +115,14 @@ class Realtime {
 		//for (i0 in 0...256) wave.setTable(wavemodule, i0, Math.sin((i0*Math.PI*2)/255) * 0.5); // sine
 		
 		//wave.preset(wavemodule, Pulse25);
-		var modbuf = wave.tableBuffer(wavemodule);
-		var sintab = tone.spawnFloats(4096);
-		OscillatorAlgorithm.sine(tone.floatallocator, tone.floatsDeref(sintab));
-		OscillatorAlgorithm.preset(tone.floatallocator, modbuf, tone.floatsDeref(sintab), 
-			Sawtooth, 256 / 22050, 22050);
+		//var modbuf = wave.tableBuffer(wavemodule);
 		
-		lfomodule = sine.spawn(tone.spawnFloats(128));
+		//var sintab = tone.spawnFloats(4096);
+		//OscillatorAlgorithm.sine(tone.floatallocator, tone.floatsDeref(sintab));
+		//OscillatorAlgorithm.preset(tone.floatallocator, modbuf, tone.floatsDeref(sintab), 
+		//	Sawtooth, 256 / 22050, 22050);
+		
+		lfomodule = sine.spawn(tone.spawnFloats(buflen));
 		sine.setWavelength(lfomodule, 0.01 / 22050);
 		//sine.setWavelength(lfomodule, 1 / 22050);
 		
@@ -135,15 +146,18 @@ class Realtime {
 		while (total < 4096) {
 			/* run a frame of tone */
 			sine.write(lfomodule);
-			var lfo_freq = (220. + tone.floatsRawBuf()[sine.out(lfomodule).first] * 219. ) / 22050;
+			var lfo_freq = (220. - tone.floatsRawBuf()[sine.out(lfomodule).first] * 219. ) / 22050;
 			//var lfo_freq = ((22050/256) + tone.floatsRawBuf()[sine.out(lfomodule).first] * 10. ) / 22050;
 			//var lfo_freq = (22050 / 256) / 22050;
 			//var lfo_freq = 440 / 22050;
 			sine.setWavelength(sinemodule, (lfo_freq));
 			sine.write(sinemodule);
-			wave.setWavelength(wavemodule, (lfo_freq));
-			wave.write(wavemodule);
+			//wave.setWavelength(wavemodule, (lfo_freq));
+			//wave.write(wavemodule);
 			
+			sosc.setWavelength(soscmodule, (lfo_freq));
+			sosc.write(soscmodule);
+						
 			// so, this works in that the LFO behaves as we expect,
 			// but it's weird that i am writing out a whole frame of samples and then taking one.
 			// which suggests that...I should just provide a whole buffer within the sine?
@@ -154,7 +168,8 @@ class Realtime {
 			
 			//tone.copyFloats(tone.sineOut(sinemodule), tonebuf, 0, 0, tonebuf.length());
 			//tone.toStereo(sine.out(sinemodule), tonebuf, 0, 0, tonebuf.length() >> 1);
-			tone.toStereo(wave.out(wavemodule), tonebuf, 0, 0, tonebuf.length() >> 1);
+			//tone.toStereo(wave.out(wavemodule), tonebuf, 0, 0, tonebuf.length() >> 1);
+			tone.toStereo(sosc.out(soscmodule), tonebuf, 0, 0, tonebuf.length() >> 1);
 			
 			/* copy frame */
 			var raw = tone.floatsRawBuf();
@@ -218,6 +233,7 @@ class Main extends Sprite
 		rte.tonebuf = rte.tone.floatsDeref(rte.tone.spawnFloats(256));
 		rte.sine = new SineModule(rte.tone);
 		rte.wave = new WavetableModule(rte.tone);
+		rte.sosc = new SimpleOscModule(rte.tone);
 		rte.start();
 		
 		var bm = ToneViz.genericVizBitmap();
