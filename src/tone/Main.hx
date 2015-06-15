@@ -77,10 +77,12 @@ class Realtime {
 	public var sine : SineModule;
 	public var wave : WavetableModule;
 	public var sosc : SimpleOscModule;
+	public var blep : PolyBLEPModule;
 	public var tonebuf : Buffer;
 	public var sinemodule : Int;
 	//public var wavemodule : Int;
 	public var soscmodule : Int;
+	public var blepmodule : Int;
 	public var lfomodule : Int;
 	
 	public function new() {
@@ -92,6 +94,7 @@ class Realtime {
 		if (sine == null) throw "SineModule is not set on Realtime";
 		if (wave == null) throw "WavetableModule is not set on Realtime";
 		if (sosc == null) throw "SimpleOscModule is not set on Realtime";
+		if (blep == null) throw "PolyBLEPModule is not set on Realtime";
 		if (tonebuf == null) throw "Realtime doesn't have a Buffer to copy from";
 		if (snd != null) stop();
 		snd = new Sound();
@@ -101,9 +104,13 @@ class Realtime {
 		sinemodule = sine.spawn(tone.spawnFloats(buflen));
 		sine.setWavelength(sinemodule, 440. / 22050);
 		
-		soscmodule = sosc.spawn(tone.spawnFloats(buflen));
-		sosc.setWavelength(soscmodule, 440. / 22050);
-		sosc.setType(soscmodule, 3);
+		//soscmodule = sosc.spawn(tone.spawnFloats(buflen));
+		//sosc.setWavelength(soscmodule, 440. / 22050);
+		//sosc.setType(soscmodule, 3);
+		//
+		blepmodule = blep.spawn(tone.spawnFloats(buflen));
+		blep.setWavelength(blepmodule, 440. / 22050);
+		blep.setType(blepmodule, 2);
 		
 		//wavemodule = wave.spawn(tone.spawnFloats(buflen));
 		//wave.setWavelength(wavemodule, 440. / 22050);
@@ -146,7 +153,7 @@ class Realtime {
 		while (total < 4096) {
 			/* run a frame of tone */
 			sine.write(lfomodule);
-			var lfo_freq = (220. - tone.floatsRawBuf()[sine.out(lfomodule).first] * 219. ) / 22050;
+			var lfo_freq = (880. + tone.floatsRawBuf()[sine.out(lfomodule).first] * 879. ) / 22050;
 			//var lfo_freq = ((22050/256) + tone.floatsRawBuf()[sine.out(lfomodule).first] * 10. ) / 22050;
 			//var lfo_freq = (22050 / 256) / 22050;
 			//var lfo_freq = 440 / 22050;
@@ -155,8 +162,10 @@ class Realtime {
 			//wave.setWavelength(wavemodule, (lfo_freq));
 			//wave.write(wavemodule);
 			
-			sosc.setWavelength(soscmodule, (lfo_freq));
-			sosc.write(soscmodule);
+			//sosc.setWavelength(soscmodule, (lfo_freq));
+			//sosc.write(soscmodule);
+			blep.setWavelength(blepmodule, (lfo_freq));
+			blep.write(blepmodule);
 						
 			// so, this works in that the LFO behaves as we expect,
 			// but it's weird that i am writing out a whole frame of samples and then taking one.
@@ -169,8 +178,9 @@ class Realtime {
 			//tone.copyFloats(tone.sineOut(sinemodule), tonebuf, 0, 0, tonebuf.length());
 			//tone.toStereo(sine.out(sinemodule), tonebuf, 0, 0, tonebuf.length() >> 1);
 			//tone.toStereo(wave.out(wavemodule), tonebuf, 0, 0, tonebuf.length() >> 1);
-			tone.toStereo(sosc.out(soscmodule), tonebuf, 0, 0, tonebuf.length() >> 1);
-			
+			//tone.toStereo(sosc.out(soscmodule), tonebuf, 0, 0, tonebuf.length() >> 1);
+			tone.toStereo(blep.out(blepmodule), tonebuf, 0, 0, tonebuf.length() >> 1);
+		
 			/* copy frame */
 			var raw = tone.floatsRawBuf();
 			var first = tonebuf.first;
@@ -234,6 +244,7 @@ class Main extends Sprite
 		rte.sine = new SineModule(rte.tone);
 		rte.wave = new WavetableModule(rte.tone);
 		rte.sosc = new SimpleOscModule(rte.tone);
+		rte.blep = new PolyBLEPModule(rte.tone);
 		rte.start();
 		
 		var bm = ToneViz.genericVizBitmap();
