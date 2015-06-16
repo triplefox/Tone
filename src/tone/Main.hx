@@ -78,11 +78,15 @@ class Realtime {
 	public var wave : WavetableModule;
 	public var sosc : SimpleOscModule;
 	public var blep : PolyBLEPModule;
+	public var sefm : SimpleFMModule;
+	public var ads : ADS;
 	public var tonebuf : Buffer;
 	public var sinemodule : Int;
-	//public var wavemodule : Int;
+	public var wavemodule : Int;
 	public var soscmodule : Int;
 	public var blepmodule : Int;
+	public var sefmmodule : Int;
+	public var adsmodule : Int;
 	public var lfomodule : Int;
 	
 	public function new() {
@@ -95,6 +99,8 @@ class Realtime {
 		if (wave == null) throw "WavetableModule is not set on Realtime";
 		if (sosc == null) throw "SimpleOscModule is not set on Realtime";
 		if (blep == null) throw "PolyBLEPModule is not set on Realtime";
+		if (sefm == null) throw "SimpleFMModule is not set on Realtime";
+		if (ads == null) throw "ADS is not set on Realtime";
 		if (tonebuf == null) throw "Realtime doesn't have a Buffer to copy from";
 		if (snd != null) stop();
 		snd = new Sound();
@@ -108,9 +114,13 @@ class Realtime {
 		//sosc.setWavelength(soscmodule, 440. / 22050);
 		//sosc.setType(soscmodule, 3);
 		//
-		blepmodule = blep.spawn(tone.spawnFloats(buflen));
-		blep.setWavelength(blepmodule, 440. / 22050);
-		blep.setType(blepmodule, 2);
+		//blepmodule = blep.spawn(tone.spawnFloats(buflen));
+		//blep.setWavelength(blepmodule, 440. / 22050);
+		//blep.setType(blepmodule, 3);
+		
+		sefmmodule = sefm.spawn(tone.spawnFloats(buflen));
+		sefm.setWavelength(sefmmodule, 440. / 22050);
+		sefm.setType(sefmmodule, 3);
 		
 		//wavemodule = wave.spawn(tone.spawnFloats(buflen));
 		//wave.setWavelength(wavemodule, 440. / 22050);
@@ -132,6 +142,11 @@ class Realtime {
 		lfomodule = sine.spawn(tone.spawnFloats(buflen));
 		sine.setWavelength(lfomodule, 0.01 / 22050);
 		//sine.setWavelength(lfomodule, 1 / 22050);
+		
+		adsmodule = ads.spawn(sefm.out(sefmmodule).id, tone.spawnFloats(buflen));
+		ads.setParam(adsmodule, ADS.ATTACK, 22050);
+		ads.setParam(adsmodule, ADS.DECAY, 22050);
+		ads.setParam(adsmodule, ADS.SUSTAIN, 0.5);		
 		
 		snd.addEventListener(SampleDataEvent.SAMPLE_DATA, onSampleData);
 		snch = snd.play();
@@ -164,8 +179,10 @@ class Realtime {
 			
 			//sosc.setWavelength(soscmodule, (lfo_freq));
 			//sosc.write(soscmodule);
-			blep.setWavelength(blepmodule, (lfo_freq));
-			blep.write(blepmodule);
+			//blep.setWavelength(blepmodule, (lfo_freq));
+			//blep.write(blepmodule);
+			sefm.setWavelength(sefmmodule, (lfo_freq));
+			sefm.write(sefmmodule);
 						
 			// so, this works in that the LFO behaves as we expect,
 			// but it's weird that i am writing out a whole frame of samples and then taking one.
@@ -175,11 +192,15 @@ class Realtime {
 			// in effect, if I want to do FM... I have a great little tool for it.
 			// run it at 2x rate and downsample too, that allows me to introduce resampling algorithms.
 			
+			ads.write(adsmodule);
+			
 			//tone.copyFloats(tone.sineOut(sinemodule), tonebuf, 0, 0, tonebuf.length());
 			//tone.toStereo(sine.out(sinemodule), tonebuf, 0, 0, tonebuf.length() >> 1);
 			//tone.toStereo(wave.out(wavemodule), tonebuf, 0, 0, tonebuf.length() >> 1);
 			//tone.toStereo(sosc.out(soscmodule), tonebuf, 0, 0, tonebuf.length() >> 1);
-			tone.toStereo(blep.out(blepmodule), tonebuf, 0, 0, tonebuf.length() >> 1);
+			//tone.toStereo(blep.out(blepmodule), tonebuf, 0, 0, tonebuf.length() >> 1);
+			//tone.toStereo(sefm.out(sefmmodule), tonebuf, 0, 0, tonebuf.length() >> 1);
+			tone.toStereo(ads.out(adsmodule), tonebuf, 0, 0, tonebuf.length() >> 1);
 		
 			/* copy frame */
 			var raw = tone.floatsRawBuf();
@@ -245,6 +266,8 @@ class Main extends Sprite
 		rte.wave = new WavetableModule(rte.tone);
 		rte.sosc = new SimpleOscModule(rte.tone);
 		rte.blep = new PolyBLEPModule(rte.tone);
+		rte.sefm = new SimpleFMModule(rte.tone);
+		rte.ads = new ADS(rte.tone);
 		rte.start();
 		
 		var bm = ToneViz.genericVizBitmap();
@@ -256,7 +279,9 @@ class Main extends Sprite
 			if (evt.keyCode == 39)
 				cam.translate(rte.tone.floatallocator.slabsize >> 1);
 			else if (evt.keyCode == 37)
-				cam.translate(-rte.tone.floatallocator.slabsize >> 1);
+				cam.translate( -rte.tone.floatallocator.slabsize >> 1);
+			else if (evt.keyCode == 65)
+				rte.ads.setParam(rte.adsmodule, ADS.POSITION, 0.);
 		});
 		Lib.current.stage.addEventListener(Event.ENTER_FRAME, function(evt) {
 			bm.bitmapData.fillRect(bm.bitmapData.rect, 0);
