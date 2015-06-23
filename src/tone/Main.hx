@@ -79,7 +79,7 @@ class Realtime {
 	public var sosc : SimpleOscModule;
 	public var blep : PolyBLEPModule;
 	public var sefm : SimpleFMModule;
-	public var ads : ADS;
+	public var ads : ADSR;
 	public var tonebuf : Buffer;
 	public var sinemodule : Int;
 	public var wavemodule : Int;
@@ -114,13 +114,13 @@ class Realtime {
 		//sosc.setWavelength(soscmodule, 440. / 22050);
 		//sosc.setType(soscmodule, 3);
 		//
-		//blepmodule = blep.spawn(tone.spawnFloats(buflen));
-		//blep.setWavelength(blepmodule, 440. / 22050);
-		//blep.setType(blepmodule, 3);
+		blepmodule = blep.spawn(tone.spawnFloats(buflen));
+		blep.setWavelength(blepmodule, 440. / 22050);
+		blep.setType(blepmodule, 3);
 		
-		sefmmodule = sefm.spawn(tone.spawnFloats(buflen));
-		sefm.setWavelength(sefmmodule, 440. / 22050);
-		sefm.setType(sefmmodule, 3);
+		//sefmmodule = sefm.spawn(tone.spawnFloats(buflen));
+		//sefm.setWavelength(sefmmodule, 440. / 22050);
+		//sefm.setType(sefmmodule, 3);
 		
 		//wavemodule = wave.spawn(tone.spawnFloats(buflen));
 		//wave.setWavelength(wavemodule, 440. / 22050);
@@ -143,10 +143,12 @@ class Realtime {
 		sine.setWavelength(lfomodule, 0.01 / 22050);
 		//sine.setWavelength(lfomodule, 1 / 22050);
 		
-		adsmodule = ads.spawn(sefm.out(sefmmodule).id, tone.spawnFloats(buflen));
-		ads.setParam(adsmodule, ADS.ATTACK, 22050);
-		ads.setParam(adsmodule, ADS.DECAY, 22050);
-		ads.setParam(adsmodule, ADS.SUSTAIN, 0.5);		
+		//adsmodule = ads.spawn(sefm.out(sefmmodule).id, tone.spawnFloats(buflen));
+		adsmodule = ads.spawn(blep.out(blepmodule).id, tone.spawnFloats(buflen));
+		ads.setFloatParam(adsmodule, ADSR.ATTACK, 2205);
+		ads.setFloatParam(adsmodule, ADSR.DECAY, 2205);
+		ads.setFloatParam(adsmodule, ADSR.SUSTAIN, 0.5);		
+		ads.setFloatParam(adsmodule, ADSR.RELEASE, 2205);
 		
 		snd.addEventListener(SampleDataEvent.SAMPLE_DATA, onSampleData);
 		snch = snd.play();
@@ -179,10 +181,10 @@ class Realtime {
 			
 			//sosc.setWavelength(soscmodule, (lfo_freq));
 			//sosc.write(soscmodule);
-			//blep.setWavelength(blepmodule, (lfo_freq));
-			//blep.write(blepmodule);
-			sefm.setWavelength(sefmmodule, (lfo_freq));
-			sefm.write(sefmmodule);
+			blep.setWavelength(blepmodule, (lfo_freq));
+			blep.write(blepmodule);
+			//sefm.setWavelength(sefmmodule, (lfo_freq));
+			//sefm.write(sefmmodule);
 						
 			// so, this works in that the LFO behaves as we expect,
 			// but it's weird that i am writing out a whole frame of samples and then taking one.
@@ -267,7 +269,7 @@ class Main extends Sprite
 		rte.sosc = new SimpleOscModule(rte.tone);
 		rte.blep = new PolyBLEPModule(rte.tone);
 		rte.sefm = new SimpleFMModule(rte.tone);
-		rte.ads = new ADS(rte.tone);
+		rte.ads = new ADSR(rte.tone);
 		rte.start();
 		
 		var bm = ToneViz.genericVizBitmap();
@@ -281,7 +283,9 @@ class Main extends Sprite
 			else if (evt.keyCode == 37)
 				cam.translate( -rte.tone.floatallocator.slabsize >> 1);
 			else if (evt.keyCode == 65)
-				rte.ads.setParam(rte.adsmodule, ADS.POSITION, 0.);
+				rte.ads.start(rte.adsmodule);
+			else if (evt.keyCode == 66)
+				rte.ads.release(rte.adsmodule);
 		});
 		Lib.current.stage.addEventListener(Event.ENTER_FRAME, function(evt) {
 			bm.bitmapData.fillRect(bm.bitmapData.rect, 0);
